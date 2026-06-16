@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 
 function makeService() {
@@ -9,11 +9,13 @@ function makeService() {
       findFirst: jest.fn(),
       update: jest.fn((a: any) => Promise.resolve({ id: a.where.id, ...a.data })),
     },
+    accountMember: { findUnique: jest.fn().mockResolvedValue({ userId: 'u2' }) },
     projectMember: {
       create: jest.fn((a: any) => Promise.resolve({ id: 'm1', ...a.data })),
       findUnique: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      upsert: jest.fn((a: any) => Promise.resolve({ id: 'm1', ...a.create })),
     },
     // $transaction runs the callback with the prisma mock
     $transaction: jest.fn((fn: any) => fn(prisma)),
@@ -85,9 +87,19 @@ describe('ProjectsService — members', () => {
     const { service, prisma } = makeService();
     prisma.project.findFirst.mockResolvedValue({ id: 'p1' });
     await service.addMember('acc-1', 'p1', { userId: 'u2', role: 'designer' });
-    expect(prisma.projectMember.create).toHaveBeenCalledWith({
-      data: { projectId: 'p1', userId: 'u2', role: 'designer' },
+    expect(prisma.projectMember.upsert).toHaveBeenCalledWith({
+      where: { projectId_userId: { projectId: 'p1', userId: 'u2' } },
+      create: { projectId: 'p1', userId: 'u2', role: 'designer' },
+      update: { role: 'designer' },
     });
+  });
+
+  it('addMember rejects a user who is not in the account', async () => {
+    const { service, prisma } = makeService();
+    prisma.project.findFirst.mockResolvedValue({ id: 'p1' });
+    prisma.accountMember.findUnique.mockResolvedValue(null);
+    await expect(service.addMember('acc-1', 'p1', { userId: 'ghost', role: 'client' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.projectMember.upsert).not.toHaveBeenCalled();
   });
 
   it('listMembers returns members for a scoped project', async () => {

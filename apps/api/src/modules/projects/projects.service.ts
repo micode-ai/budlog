@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateProjectDto, UpdateProjectDto, AddMemberDto } from './dto';
 
@@ -65,8 +65,15 @@ export class ProjectsService {
 
   async addMember(accountId: string, projectId: string, dto: AddMemberDto) {
     await this.assertProject(accountId, projectId);
-    return this.prisma.projectMember.create({
-      data: { projectId, userId: dto.userId, role: dto.role },
+    const inAccount = await this.prisma.accountMember.findUnique({
+      where: { accountId_userId: { accountId, userId: dto.userId } },
+      select: { userId: true },
+    });
+    if (!inAccount) throw new BadRequestException('User is not a member of this account');
+    return this.prisma.projectMember.upsert({
+      where: { projectId_userId: { projectId, userId: dto.userId } },
+      create: { projectId, userId: dto.userId, role: dto.role },
+      update: { role: dto.role },
     });
   }
 

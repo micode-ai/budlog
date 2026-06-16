@@ -1,4 +1,5 @@
 import { IsString, IsOptional, IsEnum } from 'class-validator';
+import { ProjectStatus, ProjectRole } from '@prisma/client';
 
 export class CreateProjectDto {
   @IsString()
@@ -27,14 +28,14 @@ export class UpdateProjectDto {
   address?: string;
 
   @IsOptional()
-  @IsEnum(['lead', 'design', 'build', 'done', 'archived'])
-  status?: 'lead' | 'design' | 'build' | 'done' | 'archived';
+  @IsEnum(ProjectStatus)
+  status?: ProjectStatus;
 }
 
 export class AddMemberDto {
   @IsString()
   userId: string;
 
-  @IsEnum(['foreman', 'designer', 'client', 'manager'])
-  role: 'foreman' | 'designer' | 'client' | 'manager';
+  @IsEnum(ProjectRole)
+  role: ProjectRole;
 }
