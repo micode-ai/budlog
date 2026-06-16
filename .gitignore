@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+.expo/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.production
+google-play-service-account.json
+
+# Firebase config (contains public-but-scanned API key — inject via GOOGLE_SERVICES_JSON secret in CI)
+apps/mobile/google-services.json
+apps/mobile/android/app/google-services.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+
+# Turbo
+.turbo/
+
+# Mobile
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+android/app/debug
+android/app/release
+bugreport-*.zip
+
+# iOS
+ios/Pods/
+ios/build/
+
+# Claude Code
+.claude/settings.local.json
+
+# Misc
+*.pem
+plan.md
+stripe.exe
+.claude
+docs/contracts
+docs/product-ideas
+docs/tech-debt
+docs/scaling
+# Superpowers brainstorm artifacts
+.superpowers/

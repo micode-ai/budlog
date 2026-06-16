@@ -1,0 +1,46 @@
+FROM node:20-alpine AS base
+# openssl is required by Prisma's query engine on alpine.
+RUN apk add --no-cache openssl
+WORKDIR /app
+
+# --- deps ---
+FROM base AS deps
+COPY package.json package-lock.json turbo.json ./
+COPY apps/api/package.json ./apps/api/
+# Stub the web workspace so npm resolves the lockfile without pulling Next.
+RUN mkdir -p apps/web && echo '{"name":"@budlog/web","version":"0.1.0","private":true}' > apps/web/package.json
+RUN npm install --legacy-peer-deps --no-audit --no-fund
+
+# --- builder ---
+FROM base AS builder
+COPY --from=deps /app ./
+COPY apps/api ./apps/api
+RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
+WORKDIR /app/apps/api
+RUN npm run build
+
+# --- migrator (run once per deploy: `compose --profile migrate up migrator`) ---
+FROM builder AS migrator
+WORKDIR /app
+CMD ["npx", "prisma", "migrate", "deploy", "--schema=apps/api/prisma/schema.prisma"]
+
+# --- runner ---
+FROM base AS runner
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
+# Bundled DejaVu fonts (PDF export) live under assets/ — required at runtime.
+COPY --from=builder /app/apps/api/assets ./apps/api/assets
+COPY --from=builder /app/apps/api/package.json ./apps/api/
+
+# Regenerate the Prisma client for the alpine runner.
+RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/api/v1/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))" || exit 1
+
+WORKDIR /app/apps/api
+CMD ["node", "dist/main"]

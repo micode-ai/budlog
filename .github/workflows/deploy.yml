@@ -1,0 +1,63 @@
+name: Deploy to VPS
+
+on:
+  # Manual-only for now — NO auto-deploy until the VPS + secrets are configured.
+  # To enable auto-deploy on push to main, uncomment the `push:` trigger below.
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'apps/api/**'
+  #     - 'apps/web/**'
+  #     - 'docker/**'
+  #     - 'docker-compose.prod.yml'
+  #     - 'scripts/deploy.sh'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          command_timeout: 15m
+          script: |
+            cd /opt/budlog
+            bash scripts/deploy.sh
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            HEALTH_URL="${HEALTH_URL:-https://api.budlog.pl/api/v1/health}"
+            echo "Waiting for API to become healthy at $HEALTH_URL (up to 120s)..."
+            for i in $(seq 1 40); do
+              code=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 5 "$HEALTH_URL" || echo "000")
+              if [ "$code" = "200" ]; then
+                echo "API healthy on attempt $i"
+                curl -s --max-time 5 "$HEALTH_URL"
+                docker ps --filter name=budlog
+                exit 0
+              fi
+              echo "  ($i/40) $HEALTH_URL -> $code, retrying in 3s..."
+              sleep 3
+            done
+            echo "ERROR: API did not become healthy in 120s" >&2
+            docker ps -a --filter name=budlog
+            docker logs --tail 100 budlog-api-prod || true
+            exit 1

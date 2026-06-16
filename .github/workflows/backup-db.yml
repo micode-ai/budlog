@@ -1,0 +1,86 @@
+name: Backup Database
+
+on:
+  # Manual-only for now — re-enable the nightly schedule once the VPS + secrets exist.
+  # schedule:
+  #   - cron: '0 2 * * *'   # 02:00 UTC nightly
+  workflow_dispatch:
+
+concurrency:
+  group: backup-db
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Dump, encrypt, publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (for scripts)
+        uses: actions/checkout@v5
+
+      - name: Install tools (age, postgresql-client)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age postgresql-client
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_backup
+          chmod 600 ~/.ssh/id_backup
+
+      - name: Create encrypted dump
+        id: dump
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY_FILE: /home/runner/.ssh/id_backup
+          AGE_PUBLIC_KEY: ${{ secrets.AGE_PUBLIC_KEY }}
+        run: |
+          bash scripts/backup-db.sh | tee out.txt
+          {
+            grep '^ENCRYPTED_FILE=' out.txt
+            grep '^DUMP_BYTES='     out.txt
+            grep '^OBJECT_COUNT='   out.txt
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish backup release
+        env:
+          GH_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+          BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
+          ENCRYPTED_FILE: ${{ steps.dump.outputs.ENCRYPTED_FILE }}
+          DUMP_BYTES: ${{ steps.dump.outputs.DUMP_BYTES }}
+          OBJECT_COUNT: ${{ steps.dump.outputs.OBJECT_COUNT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TAG="backup-$(date -u +%Y-%m-%d)"
+          NOTES="Encrypted pg_dump (custom format). Size: ${DUMP_BYTES} bytes, objects: ${OBJECT_COUNT}. Run: ${RUN_URL}"
+          if gh release view "$TAG" --repo "$BACKUP_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ENCRYPTED_FILE" --repo "$BACKUP_REPO" --clobber
+          else
+            gh release create "$TAG" "$ENCRYPTED_FILE" --repo "$BACKUP_REPO" --title "$TAG" --notes "$NOTES"
+          fi
+
+      - name: Prune old backups
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+          BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
+        run: bash scripts/prune-backups.sh
+
+      - name: Notify Telegram on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secret missing — cannot alert" >&2
+            exit 1
+          fi
+          MESSAGE=$(printf '\xF0\x9F\x92\xBE *BudLog DB BACKUP FAILED* \xF0\x9F\x92\xBE\n\nNightly PostgreSQL backup workflow failed.\n\n[GitHub run](%s)' "$RUN_URL")
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" -d "parse_mode=Markdown" -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${MESSAGE}"

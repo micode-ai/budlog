@@ -1,0 +1,58 @@
+name: Uptime Check
+
+on:
+  # Manual-only for now — re-enable the schedule once the VPS + secrets exist.
+  # schedule:
+  #   - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: uptime-check
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: Ping API health
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Hit health endpoint
+        id: probe
+        env:
+          URL: ${{ vars.HEALTH_URL || 'https://api.budlog.pl/api/v1/health' }}
+        run: |
+          set +e
+          RESP_FILE=$(mktemp)
+          STATUS=$(curl -sS -m 15 --retry 2 --retry-delay 5 \
+                        -o "$RESP_FILE" -w "%{http_code}|%{time_total}" "$URL")
+          CURL_EXIT=$?
+          CODE="${STATUS%%|*}"; TIME="${STATUS##*|}"
+          BODY=$(head -c 500 "$RESP_FILE"); rm -f "$RESP_FILE"
+          echo "url=$URL"; echo "http_code=$CODE"; echo "time_total=$TIME"; echo "curl_exit=$CURL_EXIT"; echo "body=$BODY"
+          {
+            echo "url=$URL"; echo "http_code=$CODE"; echo "time_total=$TIME"; echo "curl_exit=$CURL_EXIT"
+            echo "body<<EOF"; echo "$BODY"; echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          [ "$CODE" = "200" ] && exit 0 || exit 1
+
+      - name: Notify Telegram on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          URL: ${{ steps.probe.outputs.url }}
+          CODE: ${{ steps.probe.outputs.http_code }}
+          TIME: ${{ steps.probe.outputs.time_total }}
+          CURL_EXIT: ${{ steps.probe.outputs.curl_exit }}
+          BODY: ${{ steps.probe.outputs.body }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secret missing — cannot alert" >&2
+            exit 1
+          fi
+          MESSAGE=$(printf '\xF0\x9F\x9A\xA8 *BudLog API DOWN* \xF0\x9F\x9A\xA8\n\n*URL*: `%s`\n*HTTP*: `%s`  *time*: `%ss`  *curl exit*: `%s`\n\n*Body* (first 500B):\n```\n%s\n```\n\n[GitHub run](%s)' \
+            "$URL" "$CODE" "$TIME" "$CURL_EXIT" "${BODY:-(empty)}" "$RUN_URL")
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" -d "parse_mode=Markdown" -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${MESSAGE}"

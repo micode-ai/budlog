@@ -1,0 +1,138 @@
+# BudLog — production stack. Deploy with scripts/deploy.sh on the VPS.
+# Secrets come from .env.production (never committed) — see .env.production.example.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: budlog-db-prod
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-budlog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-budlog}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - budlog-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-budlog} -d ${POSTGRES_DB:-budlog}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: budlog-redis-prod
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - budlog-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 320M
+
+  # One-shot migration runner. Invoked by deploy.sh:
+  #   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrator
+  migrator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+      target: migrator
+    container_name: budlog-migrator
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-budlog}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-budlog}?schema=public"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - budlog-network
+    profiles:
+      - migrate
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: budlog-api-prod
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # Keep the V8 heap below the container limit while leaving non-heap headroom.
+      NODE_OPTIONS: "--max-old-space-size=768"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-budlog}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-budlog}?schema=public&connection_limit=10"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - budlog-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.budlog.pl}
+    container_name: budlog-web-prod
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3001"
+    depends_on:
+      - api
+    networks:
+      - budlog-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  budlog-network:
+    driver: bridge

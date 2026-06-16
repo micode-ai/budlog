@@ -1,0 +1,372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Enums ----
+
+enum AccountType {
+  personal
+  business
+  shared
+  investment
+}
+
+enum AccountRole {
+  owner
+  editor
+  viewer
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  declined
+  expired
+}
+
+enum SiteStatus {
+  active
+  archived
+}
+
+enum EntrySource {
+  voice
+  manual
+  photo
+}
+
+// ---- Models ----
+
+model User {
+  id                         String    @id @default(uuid())
+  email                      String    @unique
+  passwordHash               String    @map("password_hash")
+  name                       String
+  currencyCode               String    @default("USD") @map("currency_code")
+  timezone                   String    @default("UTC")
+  language                   String    @default("en")
+  isActive                   Boolean   @default(true) @map("is_active")
+  isVerified                 Boolean   @default(false) @map("is_verified")
+  emailVerificationCode      String?   @map("email_verification_code")
+  emailVerificationExpiresAt DateTime? @map("email_verification_expires_at")
+  defaultAccountId           String?   @map("default_account_id")
+  lastSyncAt                 DateTime? @map("last_sync_at")
+  passwordResetCode          String?   @map("password_reset_code")
+  passwordResetExpiresAt     DateTime? @map("password_reset_expires_at")
+  // Bumped on password reset; JWTs issued before this are rejected (session invalidation).
+  passwordChangedAt          DateTime? @map("password_changed_at")
+  emailChangePending         String?   @map("email_change_pending")
+  emailChangeCode            String?   @map("email_change_code")
+  emailChangeExpiresAt       DateTime? @map("email_change_expires_at")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
+
+  // AI preferences
+  aiResponseMode String @default("balanced") @map("ai_response_mode")
+  aiModel        String @default("balanced") @map("ai_model")
+
+  // Relations
+  chatConversations ChatConversation[]
+  ownedAccounts     Account[]          @relation("OwnedAccounts")
+  accountMembers    AccountMember[]
+  usageLogs         UsageLog[]
+
+  // Admin panel relations
+  adminNotificationLogs       NotificationLog[]
+  adminScheduledNotifications ScheduledNotification[]
+
+  // Telegram
+  telegramLink      TelegramLink?
+  telegramLinkCodes TelegramLinkCode[]
+
+  @@map("users")
+}
+
+model Account {
+  id           String      @id @default(uuid())
+  name         String
+  type         AccountType
+  currencyCode String      @default("USD") @map("currency_code")
+  ownerId      String      @map("owner_id")
+  icon         String?
+  isActive     Boolean     @default(true) @map("is_active")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  owner             User                @relation("OwnedAccounts", fields: [ownerId], references: [id], onDelete: Cascade)
+  members           AccountMember[]
+  invitations       AccountInvitation[]
+  usageLogs         UsageLog[]
+  chatConversations ChatConversation[]
+  telegramLinks     TelegramLink[]
+  sites             Site[]
+
+  @@map("accounts")
+}
+
+model AccountMember {
+  id        String      @id @default(uuid())
+  accountId String      @map("account_id")
+  userId    String      @map("user_id")
+  role      AccountRole
+  joinedAt  DateTime    @default(now()) @map("joined_at")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, userId])
+  @@map("account_members")
+}
+
+model AccountInvitation {
+  id           String           @id @default(uuid())
+  accountId    String           @map("account_id")
+  invitedBy    String           @map("invited_by")
+  invitedEmail String?          @map("invited_email")
+  inviteCode   String           @unique @map("invite_code")
+  role         AccountRole      @default(editor)
+  status       InvitationStatus @default(pending)
+  expiresAt    DateTime         @map("expires_at")
+  acceptedBy   String?          @map("accepted_by")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  // Relations
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([inviteCode])
+  @@index([invitedEmail])
+  @@map("account_invitations")
+}
+
+model ChatConversation {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  accountId String?  @map("account_id")
+  isShared  Boolean  @default(false) @map("is_shared")
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  Account?      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([accountId, updatedAt])
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id               String   @id @default(uuid())
+  conversationId   String   @map("conversation_id")
+  role             String
+  content          String
+  // Soft reference (no FK): preserves shared-chat history if the author is deleted; name resolved at read time
+  senderUserId     String?  @map("sender_user_id")
+  mentionedUserIds String[] @map("mentioned_user_ids")
+  tokensUsed       Int?     @map("tokens_used")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("chat_messages")
+}
+
+model UsageLog {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  subscriptionId String   @map("subscription_id")
+  accountId      String?  @map("account_id")
+  featureType    String   @map("feature_type")
+  costUnits      Float    @map("cost_units")
+  metadata       Json?    @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([accountId, userId, createdAt])
+  @@map("usage_logs")
+}
+
+model NotificationLog {
+  id             String   @id @default(uuid())
+  adminId        String?  @map("admin_id")
+  type           String // "push" | "email" | "broadcast"
+  recipientCount Int      @map("recipient_count")
+  successCount   Int      @default(0) @map("success_count")
+  failCount      Int      @default(0) @map("fail_count")
+  subject        String?
+  body           String?
+  filters        Json?    @db.JsonB
+  recipientIds   Json?    @map("recipient_ids") @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  admin User? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId, createdAt])
+  @@map("notification_logs")
+}
+
+model ScheduledNotification {
+  id          String    @id @default(uuid())
+  adminId     String?   @map("admin_id")
+  type        String // "push" | "email"
+  title       String?
+  subject     String?
+  body        String
+  filters     Json?     @db.JsonB
+  userIds     Json?     @map("user_ids") @db.JsonB
+  scheduledAt DateTime  @map("scheduled_at")
+  executedAt  DateTime? @map("executed_at")
+  status      String    @default("pending") // "pending" | "sent" | "failed" | "cancelled"
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  admin User? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@map("scheduled_notifications")
+}
+
+// ── Construction sites domain (Phase 2) ──
+
+model Site {
+  id          String     @id @default(uuid())
+  accountId   String     @map("account_id")
+  name        String
+  address     String?
+  clientName  String?    @map("client_name")
+  status      SiteStatus @default(active)
+  createdById String     @map("created_by_id")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  account         Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workEntries     WorkEntry[]
+  materialEntries MaterialEntry[]
+  photos          SitePhoto[]
+  reportLinks     ReportLink[]
+
+  @@index([accountId, status])
+  @@map("sites")
+}
+
+model ReportLink {
+  id          String    @id @default(uuid())
+  accountId   String    @map("account_id")
+  siteId      String    @map("site_id")
+  token       String    @unique
+  expiresAt   DateTime? @map("expires_at")
+  revoked     Boolean   @default(false)
+  createdById String    @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, siteId])
+  @@map("report_links")
+}
+
+model WorkEntry {
+  id           String      @id @default(uuid())
+  accountId    String      @map("account_id")
+  siteId       String      @map("site_id")
+  authorUserId String      @map("author_user_id")
+  description  String
+  workDate     DateTime    @map("work_date") @db.Date
+  source       EntrySource @default(manual)
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  site            Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  materialEntries MaterialEntry[]
+
+  @@index([accountId, siteId, workDate])
+  @@map("work_entries")
+}
+
+model MaterialEntry {
+  id           String   @id @default(uuid())
+  accountId    String   @map("account_id")
+  siteId       String   @map("site_id")
+  authorUserId String   @map("author_user_id")
+  name         String
+  quantity     Float
+  unit         String?
+  workEntryId  String?  @map("work_entry_id")
+  entryDate    DateTime @map("entry_date") @db.Date
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  site      Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  workEntry WorkEntry? @relation(fields: [workEntryId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, siteId, entryDate])
+  @@map("material_entries")
+}
+
+model SitePhoto {
+  id             String   @id @default(uuid())
+  accountId      String   @map("account_id")
+  siteId         String   @map("site_id")
+  authorUserId   String   @map("author_user_id")
+  telegramFileId String   @map("telegram_file_id")
+  caption        String?
+  takenAt        DateTime @default(now()) @map("taken_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, siteId, takenAt])
+  @@map("site_photos")
+}
+
+// ── Telegram ──
+
+model TelegramLink {
+  id               String   @id @default(uuid())
+  telegramUserId   String   @unique @map("telegram_user_id")
+  telegramUsername String?  @map("telegram_username")
+  userId           String   @unique @map("user_id")
+  defaultAccountId String   @map("default_account_id")
+  conversationId   String?  @map("conversation_id")
+  // Soft reference (no FK) to the foreman's currently-selected Site for bot capture;
+  // resolved at read time, cleared on account switch.
+  activeSiteId     String?  @map("active_site_id")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [defaultAccountId], references: [id], onDelete: Cascade)
+
+  @@map("telegram_links")
+}
+
+model TelegramLinkCode {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  accountId String    @map("account_id")
+  code      String    @unique
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@index([userId])
+  @@map("telegram_link_codes")
+}

@@ -1,0 +1,47 @@
+# BudLog — local dev infra (Postgres + Redis)
+# Host ports chosen to avoid clashing with other local projects:
+#   5432/5433/5434/5436 other local Postgres · 6379 other local Redis
+#   → BudLog uses 5435 (Postgres) and 6380 (Redis).
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down        # keep data
+#   docker compose -f docker-compose.dev.yml down -v      # wipe data
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: budlog-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: budlog
+      POSTGRES_PASSWORD: budlog
+      POSTGRES_DB: budlog_dev
+    ports:
+      - "5435:5432"
+    volumes:
+      - budlog_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budlog -d budlog_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: budlog-redis-dev
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - budlog_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  budlog_pgdata:
+  budlog_redisdata:
