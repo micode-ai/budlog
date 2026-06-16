@@ -55,6 +55,34 @@ enum ProjectRole {
   manager
 }
 
+enum RequestType {
+  plan
+  design
+  change
+  question
+  other
+}
+
+enum RequestStatus {
+  open
+  accepted
+  in_progress
+  done
+  declined
+}
+
+enum AttachmentKind {
+  plan
+  photo
+  doc
+  design
+}
+
+enum AttachmentStorage {
+  telegram
+  file
+}
+
 // ---- Models ----
 
 model User {
@@ -364,9 +392,11 @@ model Project {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
-  account Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  members ProjectMember[]
-  sites   Site[]
+  account     Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  members     ProjectMember[]
+  sites       Site[]
+  requests    Request[]
+  attachments Attachment[]
 
   @@index([accountId, status])
   @@map("projects")
@@ -385,6 +415,61 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([userId])
   @@map("project_members")
+}
+
+model Request {
+  id             String        @id @default(uuid())
+  accountId      String        @map("account_id")
+  projectId      String        @map("project_id")
+  createdById    String        @map("created_by_id")
+  type           RequestType   @default(other)
+  title          String
+  body           String
+  status         RequestStatus @default(open)
+  assigneeRole   ProjectRole?  @map("assignee_role")
+  assigneeUserId String?       @map("assignee_user_id")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages    RequestMessage[]
+  attachments Attachment[]
+
+  @@index([accountId, projectId, status])
+  @@map("requests")
+}
+
+model RequestMessage {
+  id           String   @id @default(uuid())
+  requestId    String   @map("request_id")
+  authorUserId String   @map("author_user_id")
+  body         String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  request Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+  @@map("request_messages")
+}
+
+model Attachment {
+  id          String            @id @default(uuid())
+  accountId   String            @map("account_id")
+  projectId   String            @map("project_id")
+  requestId   String?           @map("request_id")
+  kind        AttachmentKind
+  storage     AttachmentStorage
+  fileRef     String            @map("file_ref")
+  mimeType    String?           @map("mime_type")
+  caption     String?
+  createdById String            @map("created_by_id")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  request Request? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, projectId])
+  @@map("attachments")
 }
 
 // ── Telegram ──
