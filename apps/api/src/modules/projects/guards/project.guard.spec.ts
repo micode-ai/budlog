@@ -6,13 +6,17 @@ function ctx(req: any): any {
 }
 
 function makeGuard() {
-  const prisma: any = { projectMember: { findUnique: jest.fn() } };
+  const prisma: any = {
+    project: { findFirst: jest.fn() },
+    projectMember: { findUnique: jest.fn() },
+  };
   return { guard: new ProjectGuard(prisma), prisma };
 }
 
 describe('ProjectGuard', () => {
   it('allows a project member and sets req.projectRole', async () => {
     const { guard, prisma } = makeGuard();
+    prisma.project.findFirst.mockResolvedValue({ id: 'p1' });
     prisma.projectMember.findUnique.mockResolvedValue({ role: 'designer' });
     const req: any = { user: { id: 'u1' }, accountId: 'acc-1', accountRole: 'editor', params: { id: 'p1' } };
     await expect(guard.canActivate(ctx(req))).resolves.toBe(true);
@@ -24,6 +28,7 @@ describe('ProjectGuard', () => {
 
   it('allows the account owner as manager without a membership row', async () => {
     const { guard, prisma } = makeGuard();
+    prisma.project.findFirst.mockResolvedValue({ id: 'p1' });
     prisma.projectMember.findUnique.mockResolvedValue(null);
     const req: any = { user: { id: 'o1' }, accountId: 'acc-1', accountRole: 'owner', params: { id: 'p1' } };
     await expect(guard.canActivate(ctx(req))).resolves.toBe(true);
@@ -32,8 +37,21 @@ describe('ProjectGuard', () => {
 
   it('rejects a non-member non-owner with NotFound', async () => {
     const { guard, prisma } = makeGuard();
+    prisma.project.findFirst.mockResolvedValue({ id: 'p1' });
     prisma.projectMember.findUnique.mockResolvedValue(null);
     const req: any = { user: { id: 'u9' }, accountId: 'acc-1', accountRole: 'viewer', params: { id: 'p1' } };
     await expect(guard.canActivate(ctx(req))).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rejects a project from another account (cross-tenant) with NotFound', async () => {
+    const { guard, prisma } = makeGuard();
+    prisma.project.findFirst.mockResolvedValue(null); // not in req.accountId
+    const req: any = { user: { id: 'o1' }, accountId: 'acc-1', accountRole: 'owner', params: { id: 'p-other' } };
+    await expect(guard.canActivate(ctx(req))).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.project.findFirst).toHaveBeenCalledWith({
+      where: { id: 'p-other', accountId: 'acc-1' },
+      select: { id: true },
+    });
+    expect(prisma.projectMember.findUnique).not.toHaveBeenCalled();
   });
 });
