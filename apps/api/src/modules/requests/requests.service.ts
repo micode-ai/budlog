@@ -11,6 +11,9 @@ const TRANSITIONS: Record<string, { from: string[]; to: RequestStatus }> = {
   done: { from: ['accepted', 'in_progress'], to: 'done' },
 };
 
+// FIX 2(a): roles that are allowed to act on requests (client is observe-only)
+const WRITE_ROLES = new Set(['manager', 'foreman', 'designer']);
+
 @Injectable()
 export class RequestsService {
   constructor(
@@ -18,7 +21,21 @@ export class RequestsService {
     private readonly fileStore: FileStore,
   ) {}
 
-  createRequest(accountId: string, projectId: string, userId: string, dto: CreateRequestDto) {
+  // FIX 2(b): reject invalid assigneeRole; FIX 3: validate assigneeUserId is a project member
+  async createRequest(accountId: string, projectId: string, userId: string, dto: CreateRequestDto) {
+    // FIX 2(b): assigneeRole must be foreman or designer (not manager, not client)
+    if (dto.assigneeRole && dto.assigneeRole !== 'foreman' && dto.assigneeRole !== 'designer') {
+      throw new BadRequestException('assigneeRole must be foreman or designer');
+    }
+
+    // FIX 3: if assigneeUserId is provided, ensure they are a member of this project
+    if (dto.assigneeUserId) {
+      const member = await this.prisma.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId: dto.assigneeUserId } },
+      });
+      if (!member) throw new BadRequestException('assigneeUserId is not a member of this project');
+    }
+
     return this.prisma.request.create({
       data: {
         accountId,
@@ -40,13 +57,17 @@ export class RequestsService {
     });
   }
 
+  // FIX 4: select only client-safe fields — never expose fileRef/storage in attachments include
   getRequest(accountId: string, projectId: string, requestId: string) {
     return this.prisma.request
       .findFirst({
         where: { id: requestId, accountId, projectId },
         include: {
           messages: { orderBy: { createdAt: 'asc' } },
-          attachments: { orderBy: { createdAt: 'asc' } },
+          attachments: {
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, kind: true, mimeType: true, caption: true, createdById: true, createdAt: true },
+          },
         },
       })
       .then((r) => {
@@ -64,10 +85,12 @@ export class RequestsService {
   ) {
     const request = await this.assertRequest(accountId, projectId, requestId);
 
+    // FIX 2(a): client role is blocked; non-manager must be the assignee AND hold a write role
     const isManager = actor.projectRole === 'manager';
     const isAssignee =
-      (request.assigneeUserId && request.assigneeUserId === actor.userId) ||
-      (request.assigneeRole && request.assigneeRole === actor.projectRole);
+      WRITE_ROLES.has(actor.projectRole) &&
+      ((request.assigneeUserId && request.assigneeUserId === actor.userId) ||
+        (request.assigneeRole && request.assigneeRole === actor.projectRole));
     if (!isManager && !isAssignee) {
       throw new ForbiddenException('Only the assignee or a project manager can change this request');
     }
@@ -121,13 +144,24 @@ export class RequestsService {
     });
   }
 
-  listAttachments(accountId: string, projectId: string, requestId: string) {
+  // FIX 4: call assertRequest first; select only client-safe fields (no fileRef/storage)
+  async listAttachments(accountId: string, projectId: string, requestId: string) {
+    await this.assertRequest(accountId, projectId, requestId);
     return this.prisma.attachment.findMany({
       where: { accountId, projectId, requestId },
       orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        kind: true,
+        mimeType: true,
+        caption: true,
+        createdById: true,
+        createdAt: true,
+      },
     });
   }
 
+  // getAttachmentFile is internal-only and still selects all fields (needs fileRef/storage)
   async getAttachmentFile(accountId: string, projectId: string, attachmentId: string) {
     const att = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, accountId, projectId },

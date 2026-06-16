@@ -18,6 +18,10 @@ function makeService() {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn(),
     },
+    // FIX 3: projectMember mock — default returns a valid member
+    projectMember: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'pm1', role: 'designer' }),
+    },
   };
   const fileStore: any = { save: jest.fn(), read: jest.fn() };
   return { service: new RequestsService(prisma, fileStore), prisma };
@@ -40,6 +44,57 @@ describe('RequestsService — create/list', () => {
     expect(prisma.request.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { accountId: 'acc-1', projectId: 'p1' } }),
     );
+  });
+
+  // FIX 2(b): assigneeRole must be foreman or designer
+  it('createRequest rejects assigneeRole client', async () => {
+    const { service } = makeService();
+    await expect(
+      service.createRequest('acc-1', 'p1', 'u1', { title: 'T', body: 'B', assigneeRole: 'client' as any }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('createRequest rejects assigneeRole manager', async () => {
+    const { service } = makeService();
+    await expect(
+      service.createRequest('acc-1', 'p1', 'u1', { title: 'T', body: 'B', assigneeRole: 'manager' as any }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('createRequest allows assigneeRole foreman', async () => {
+    const { service, prisma } = makeService();
+    await expect(
+      service.createRequest('acc-1', 'p1', 'u1', { title: 'T', body: 'B', assigneeRole: 'foreman' as any }),
+    ).resolves.toBeDefined();
+    expect(prisma.request.create).toHaveBeenCalled();
+  });
+
+  it('createRequest allows assigneeRole designer', async () => {
+    const { service, prisma } = makeService();
+    await expect(
+      service.createRequest('acc-1', 'p1', 'u1', { title: 'T', body: 'B', assigneeRole: 'designer' as any }),
+    ).resolves.toBeDefined();
+    expect(prisma.request.create).toHaveBeenCalled();
+  });
+
+  // FIX 3: assigneeUserId must be a project member
+  it('createRequest rejects assigneeUserId that is not a project member', async () => {
+    const { service, prisma } = makeService();
+    prisma.projectMember.findUnique.mockResolvedValue(null);
+    await expect(
+      service.createRequest('acc-1', 'p1', 'u1', { title: 'T', body: 'B', assigneeUserId: 'u-unknown' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('createRequest accepts a valid assigneeUserId that is a project member', async () => {
+    const { service, prisma } = makeService();
+    // projectMember.findUnique already returns a member by default
+    await expect(
+      service.createRequest('acc-1', 'p1', 'u1', { title: 'T', body: 'B', assigneeUserId: 'u2' }),
+    ).resolves.toBeDefined();
+    expect(prisma.projectMember.findUnique).toHaveBeenCalledWith({
+      where: { projectId_userId: { projectId: 'p1', userId: 'u2' } },
+    });
   });
 });
 
@@ -67,6 +122,22 @@ describe('RequestsService — get/transition', () => {
       service.transition('acc-1', 'p1', 'r1', { action: 'accept' }, { userId: 'u9', projectRole: 'client' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.request.update).not.toHaveBeenCalled();
+  });
+
+  // FIX 2(a): foreman who is not the assignee is also forbidden
+  it('transition forbidden for a foreman who is not the assignee', async () => {
+    const { service, prisma } = makeService();
+    prisma.request.findFirst.mockResolvedValue({ id: 'r1', status: 'open', assigneeRole: 'designer', assigneeUserId: null });
+    await expect(
+      service.transition('acc-1', 'p1', 'r1', { action: 'accept' }, { userId: 'u9', projectRole: 'foreman' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('transition allowed for manager regardless of assignee', async () => {
+    const { service, prisma } = makeService();
+    prisma.request.findFirst.mockResolvedValue({ id: 'r1', status: 'open', assigneeRole: 'designer', assigneeUserId: null });
+    await service.transition('acc-1', 'p1', 'r1', { action: 'accept' }, { userId: 'mgr', projectRole: 'manager' });
+    expect(prisma.request.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { status: 'accepted' } });
   });
 
   it('transition rejects an illegal state change', async () => {
@@ -129,5 +200,33 @@ describe('RequestsService — attachments', () => {
     });
     expect(out.buffer.toString()).toBe('data');
     expect(out.mimeType).toBe('image/png');
+  });
+
+  // FIX 4: listAttachments now calls assertRequest first and uses select (no fileRef/storage)
+  it('listAttachments scopes through assertRequest and uses select', async () => {
+    const { service, prisma } = makeService();
+    prisma.request.findFirst.mockResolvedValue({ id: 'r1' });
+    await service.listAttachments('acc-1', 'p1', 'r1');
+    // assertRequest must have been called with correct scope
+    expect(prisma.request.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'r1', accountId: 'acc-1', projectId: 'p1' } }),
+    );
+    // attachment query must use select (no fileRef/storage)
+    expect(prisma.attachment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId: 'acc-1', projectId: 'p1', requestId: 'r1' },
+        select: expect.objectContaining({ id: true, mimeType: true }),
+      }),
+    );
+    // fileRef and storage must NOT appear in the select
+    const call = prisma.attachment.findMany.mock.calls[0][0];
+    expect(call.select).not.toHaveProperty('fileRef');
+    expect(call.select).not.toHaveProperty('storage');
+  });
+
+  it('listAttachments 404s when request is not in scope', async () => {
+    const { service, prisma } = makeService();
+    prisma.request.findFirst.mockResolvedValue(null);
+    await expect(service.listAttachments('acc-1', 'p1', 'rX')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { promises as fs } from 'fs';
-import { join, basename } from 'path';
+import { join } from 'path';
 
 /** Local-disk file store for web uploads. Filenames are generated (no user input in the path);
  *  S3 can replace this behind the same two-method interface later. */
@@ -22,9 +22,12 @@ export class FileStore {
     return { fileRef: name };
   }
 
+  // FIX 6: strict allowlist regex — only our generated names (32 hex + dot + short alnum ext).
+  // Rejects Windows backslash traversal, dotdot paths, and anything not matching our scheme.
   async read(fileRef: string): Promise<Buffer> {
-    // Only generated basenames are valid — reject anything with path separators.
-    if (basename(fileRef) !== fileRef) throw new BadRequestException('Invalid file reference');
+    if (!/^[0-9a-f]{32}\.[a-z0-9]{1,8}$/.test(fileRef)) {
+      throw new BadRequestException('Invalid file reference');
+    }
     return fs.readFile(join(this.dir, fileRef));
   }
 }

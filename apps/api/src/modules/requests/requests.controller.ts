@@ -11,6 +11,7 @@ import { ProjectGuard } from '../projects/guards/project.guard';
 import { AuthenticatedRequest } from '../../common/types';
 import { RequestsService } from './requests.service';
 import { CreateRequestDto, TransitionRequestDto, CreateMessageDto, CreateAttachmentDto } from './dto';
+import { safeContentType } from './mime';
 
 type ProjectRequest = AuthenticatedRequest & { projectRole?: string };
 
@@ -28,6 +29,18 @@ export class RequestsController {
   @UseGuards(ViewerBlockGuard)
   create(@Req() req: AuthenticatedRequest, @Param('id') projectId: string, @Body() dto: CreateRequestDto) {
     return this.requests.createRequest(req.accountId, projectId, req.user.id, dto);
+  }
+
+  // FIX 7: static-literal route declared before the ':rid' wildcard param route
+  @Get('attachments/:aid/file')
+  async getFile(@Req() req: AuthenticatedRequest, @Param('id') projectId: string, @Param('aid') aid: string, @Res() res: Response) {
+    const { buffer, mimeType } = await this.requests.getAttachmentFile(req.accountId, projectId, aid);
+    // FIX 1(b): harden Content-Type, force download, and add defense-in-depth headers
+    res.setHeader('Content-Type', safeContentType(mimeType));
+    res.setHeader('Content-Disposition', 'attachment');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    res.send(buffer);
   }
 
   @Get(':rid')
@@ -72,12 +85,5 @@ export class RequestsController {
   ) {
     if (!file) throw new BadRequestException('file is required');
     return this.requests.addAttachment(req.accountId, projectId, rid, req.user.id, file.buffer, file.mimetype, dto);
-  }
-
-  @Get('attachments/:aid/file')
-  async getFile(@Req() req: AuthenticatedRequest, @Param('id') projectId: string, @Param('aid') aid: string, @Res() res: Response) {
-    const { buffer, mimeType } = await this.requests.getAttachmentFile(req.accountId, projectId, aid);
-    res.setHeader('Content-Type', mimeType);
-    res.send(buffer);
   }
 }
