@@ -13,6 +13,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
 import { HealthModule } from './modules/health/health.module';
 import { SitesModule } from './modules/sites/sites.module';
+import { ProjectsModule } from './modules/projects/projects.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CacheModule } from './common/cache/cache.module';
@@ -53,6 +54,7 @@ import { CacheModule } from './common/cache/cache.module';
     UsersModule,
     AccountsModule,
     SitesModule,
+    ProjectsModule,
     ReportsModule,
     AdminModule,
     HealthModule,
