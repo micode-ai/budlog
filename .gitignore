@@ -62,6 +62,9 @@ ios/build/
 # Misc
 *.pem
 plan.md
+
+# Uploaded files (local disk store — never commit)
+uploads/
 stripe.exe
 .claude
 docs/contracts

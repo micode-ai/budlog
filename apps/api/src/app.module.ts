@@ -14,6 +14,7 @@ import { TelegramModule } from './modules/telegram/telegram.module';
 import { HealthModule } from './modules/health/health.module';
 import { SitesModule } from './modules/sites/sites.module';
 import { ProjectsModule } from './modules/projects/projects.module';
+import { RequestsModule } from './modules/requests/requests.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CacheModule } from './common/cache/cache.module';
@@ -55,6 +56,7 @@ import { CacheModule } from './common/cache/cache.module';
     AccountsModule,
     SitesModule,
     ProjectsModule,
+    RequestsModule,
     ReportsModule,
     AdminModule,
     HealthModule,
