@@ -40,6 +40,21 @@ enum EntrySource {
   photo
 }
 
+enum ProjectStatus {
+  lead
+  design
+  build
+  done
+  archived
+}
+
+enum ProjectRole {
+  foreman
+  designer
+  client
+  manager
+}
+
 // ---- Models ----
 
 model User {
@@ -83,6 +98,7 @@ model User {
   // Telegram
   telegramLink      TelegramLink?
   telegramLinkCodes TelegramLinkCode[]
+  projectMembers    ProjectMember[]
 
   @@map("users")
 }
@@ -106,6 +122,7 @@ model Account {
   chatConversations ChatConversation[]
   telegramLinks     TelegramLink[]
   sites             Site[]
+  projects          Project[]
 
   @@map("accounts")
 }
@@ -255,7 +272,10 @@ model Site {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
+  projectId String? @map("project_id")
+
   account         Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  project         Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
   workEntries     WorkEntry[]
   materialEntries MaterialEntry[]
   photos          SitePhoto[]
@@ -331,6 +351,40 @@ model SitePhoto {
 
   @@index([accountId, siteId, takenAt])
   @@map("site_photos")
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  accountId   String        @map("account_id")
+  name        String
+  clientName  String?       @map("client_name")
+  address     String?
+  status      ProjectStatus @default(lead)
+  createdById String        @map("created_by_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  account Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  members ProjectMember[]
+  sites   Site[]
+
+  @@index([accountId, status])
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String      @id @default(uuid())
+  projectId String      @map("project_id")
+  userId    String      @map("user_id")
+  role      ProjectRole
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
 }
 
 // ── Telegram ──
