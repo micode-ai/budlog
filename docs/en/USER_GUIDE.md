@@ -119,6 +119,41 @@ Read-only — for support lookups, not editing.
 
 ---
 
+## D. Web portal — collaboration (client ↔ foreman ↔ designer)
+
+Beyond the journal, BudLog has a **web portal** for collaboration inside one company: client,
+foreman, and designer track projects, exchange requests, and run an AI design action on a plan.
+
+URL: `http://localhost:3001/app/login` (prod: `https://budlog.pl/app/login`).
+Sign in with the same account you use for the API (dev: `alice@test.com` / `TestPass123`).
+
+### 1. Projects
+After login you get the **projects** list (`/app/projects`). Type a name → "New project",
+then open the project.
+
+### 2. Requests (Requests tab)
+Inside a project, the **Requests** tab is the client↔foreman↔designer conversation:
+- **New request** — title, description, type (`plan`/`design`/`change`/`question`/`other`),
+  and who to assign (`foreman`/`designer`).
+- Open a request → **message thread** (write a message → "Send").
+- **Status buttons**: Accept → Start → Mark done (or Decline). Only actions valid for the
+  current status are shown; only the assignee or a project manager can change status.
+- **Upload plan** — attach a plan image (PNG/JPG) to the request.
+
+### 3. AI design from a plan
+On an attached plan, click **"Run design"** — BudLog sends the image to GPT-4o (vision) and
+stores a **draft**: a schema JSON (rooms + approximate sizes) and a rendered **SVG floor plan**.
+Dimensions are approximate — a draft for the designer to review, not CAD.
+
+### 4. Designs (Designs tab)
+The **Designs** tab shows the generated artifacts: the SVG renders as an image, the schema as
+JSON. (The SVG is shown sandboxed via a `data:` `<img>` — scripts inside it never execute.)
+
+> The **Journal** tab is the public site report from section B; its link is shared from the
+> Telegram bot (`/report`).
+
+---
+
 ## Verification checklist
 
 - [ ] `/start` + `/link <code>` → linked
@@ -131,3 +166,12 @@ Read-only — for support lookups, not editing.
 - [ ] `/report` → open link → web report renders → **Download PDF** works → switch language
 - [ ] `/admin` → sign in → dashboard stats + tables load
 - [ ] A second account's foreman cannot see the first account's sites (data isolation)
+
+### Web portal (collaboration)
+- [ ] `/app/login` → sign in `alice@test.com` / `TestPass123` → projects list
+- [ ] Create a project → open it
+- [ ] Requests: create a request (type `plan`, assign `designer`) → open it
+- [ ] Post a message in the thread; click "Accept" (status → accepted)
+- [ ] "Upload plan" (PNG/JPG) → then "Run design"
+- [ ] Designs: the schema (JSON) and SVG floor plan render; in DevTools the SVG is `<img src="data:…">`
+- [ ] Reload the page → redirected to `/app/login` (the token lives in memory only)
