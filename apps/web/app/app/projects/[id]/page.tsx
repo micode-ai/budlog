@@ -29,6 +29,8 @@ export default function ProjectPage() {
   const tabs: Tab[] = ['requests', 'designs', 'journal'];
   const label: Record<Tab, string> = { requests: t.requests, designs: t.designs, journal: t.journal };
 
+  if (!getToken()) return null;
+
   return (
     <main className="mx-auto max-w-3xl px-5 py-6 sm:px-6">
       <div className="flex items-center justify-between">
@@ -54,11 +56,7 @@ export default function ProjectPage() {
       <div className="mt-5">
         {tab === 'requests' && <RequestsTab projectId={projectId} />}
         {tab === 'designs' && <DesignsTab projectId={projectId} />}
-        {tab === 'journal' && (
-          <p className="text-sm text-muted">
-            {t.journal}: {t.openReport} — the read-only site report is shared via its own link from Telegram (<code>/report</code>).
-          </p>
-        )}
+        {tab === 'journal' && <p className="text-sm text-muted">{t.journalHint}</p>}
       </div>
     </main>
   );

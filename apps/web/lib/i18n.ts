@@ -124,6 +124,8 @@ interface PortalDict {
   openReport: string;
   status: string;
   loadFailed: string;
+  journalHint: string;
+  designReady: string;
 }
 
 export const P: Record<Lang, PortalDict> = {
@@ -136,6 +138,8 @@ export const P: Record<Lang, PortalDict> = {
     writeMessage: 'Write a message…', attachments: 'Attachments', uploadPlan: 'Upload plan',
     runDesign: 'Run design', noRequests: 'No requests yet.', noDesigns: 'No designs yet.',
     schema: 'Schema', signOut: 'Sign out', openReport: 'Open report', status: 'Status', loadFailed: 'Failed to load.',
+    journalHint: 'The read-only site report is shared via its own link from the Telegram bot (/report).',
+    designReady: 'Design generated — see the Designs tab.',
   },
   pl: {
     signIn: 'Zaloguj się', email: 'E-mail', password: 'Hasło', invalidLogin: 'Nieprawidłowy e-mail lub hasło.',
@@ -146,6 +150,8 @@ export const P: Record<Lang, PortalDict> = {
     writeMessage: 'Napisz wiadomość…', attachments: 'Załączniki', uploadPlan: 'Wgraj plan',
     runDesign: 'Generuj projekt', noRequests: 'Brak zgłoszeń.', noDesigns: 'Brak projektów graficznych.',
     schema: 'Schemat', signOut: 'Wyloguj', openReport: 'Otwórz raport', status: 'Status', loadFailed: 'Błąd ładowania.',
+    journalHint: 'Raport budowy tylko do odczytu jest udostępniany osobnym linkiem przez bota Telegram (/report).',
+    designReady: 'Projekt wygenerowany — zobacz zakładkę Projekty graficzne.',
   },
   ru: {
     signIn: 'Войти', email: 'E-mail', password: 'Пароль', invalidLogin: 'Неверный e-mail или пароль.',
@@ -156,6 +162,8 @@ export const P: Record<Lang, PortalDict> = {
     writeMessage: 'Написать сообщение…', attachments: 'Вложения', uploadPlan: 'Загрузить план',
     runDesign: 'Сгенерировать дизайн', noRequests: 'Заявок пока нет.', noDesigns: 'Дизайнов пока нет.',
     schema: 'Схема', signOut: 'Выйти', openReport: 'Открыть отчёт', status: 'Статус', loadFailed: 'Ошибка загрузки.',
+    journalHint: 'Отчёт по объекту (только для чтения) доступен по отдельной ссылке из Telegram-бота (/report).',
+    designReady: 'Дизайн сгенерирован — смотрите вкладку «Дизайны».',
   },
   ua: {
     signIn: 'Увійти', email: 'E-mail', password: 'Пароль', invalidLogin: 'Невірний e-mail або пароль.',
@@ -166,5 +174,7 @@ export const P: Record<Lang, PortalDict> = {
     writeMessage: 'Написати повідомлення…', attachments: 'Вкладення', uploadPlan: 'Завантажити план',
     runDesign: 'Згенерувати дизайн', noRequests: 'Заявок поки немає.', noDesigns: 'Дизайнів поки немає.',
     schema: 'Схема', signOut: 'Вийти', openReport: 'Відкрити звіт', status: 'Статус', loadFailed: 'Помилка завантаження.',
+    journalHint: "Звіт по об'єкту (лише для перегляду) доступний за окремим посиланням із Telegram-бота (/report).",
+    designReady: 'Дизайн згенеровано — дивіться вкладку «Дизайни».',
   },
 };

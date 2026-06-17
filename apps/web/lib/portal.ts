@@ -136,6 +136,15 @@ export interface DesignArtifact {
 
 /** Turn stored SVG markup into a sandboxed data-URI for an <img> (SVG scripts do NOT run in <img>). */
 export function svgToDataUri(svg: string): string {
-  const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(svg))) : '';
+  let b64: string;
+  if (typeof window === 'undefined') {
+    // SSR (Next renders client components on the server first) — Node Buffer is available here.
+    b64 = Buffer.from(svg, 'utf-8').toString('base64');
+  } else {
+    const bytes = new TextEncoder().encode(svg);
+    let bin = '';
+    for (const byte of bytes) bin += String.fromCharCode(byte);
+    b64 = window.btoa(bin);
+  }
   return `data:image/svg+xml;base64,${b64}`;
 }

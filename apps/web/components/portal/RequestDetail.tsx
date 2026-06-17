@@ -7,6 +7,14 @@ import { P } from '@/lib/i18n';
 
 const ACTIONS = ['accept', 'decline', 'start', 'done'] as const;
 
+const ALLOWED_ACTIONS: Record<string, string[]> = {
+  open: ['accept', 'decline'],
+  accepted: ['start', 'decline', 'done'],
+  in_progress: ['done', 'decline'],
+  done: [],
+  declined: [],
+};
+
 export default function RequestDetail({ projectId, requestId, onBack }: { projectId: string; requestId: string; onBack: () => void }) {
   const router = useRouter();
   const t = P.en;
@@ -14,6 +22,7 @@ export default function RequestDetail({ projectId, requestId, onBack }: { projec
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [designMsg, setDesignMsg] = useState('');
 
   function gate(err: unknown) {
     if (err instanceof Unauthorized) {
@@ -65,9 +74,12 @@ export default function RequestDetail({ projectId, requestId, onBack }: { projec
   }
 
   async function runDesign(planAttachmentId: string) {
-    setBusy(true); setError('');
-    try { await ppost(`projects/${projectId}/requests/${requestId}/design`, { planAttachmentId }); }
-    catch (err) { gate(err); } finally { setBusy(false); }
+    setBusy(true); setError(''); setDesignMsg('');
+    try {
+      await ppost(`projects/${projectId}/requests/${requestId}/design`, { planAttachmentId });
+      setDesignMsg(t.designReady);
+      await load();
+    } catch (err) { gate(err); } finally { setBusy(false); }
   }
 
   if (!req) return <p className="text-sm text-muted">…</p>;
@@ -83,7 +95,7 @@ export default function RequestDetail({ projectId, requestId, onBack }: { projec
         <p className="mt-1 text-sm text-secondary">{req.body}</p>
 
         <div className="mt-3 flex flex-wrap gap-2">
-          {ACTIONS.map((a) => (
+          {ACTIONS.filter((a) => (ALLOWED_ACTIONS[req.status] ?? []).includes(a)).map((a) => (
             <button key={a} onClick={() => act(a)} disabled={busy}
               className="rounded-md border border-hairline px-3 py-1.5 text-sm text-secondary hover:border-cta hover:text-cta disabled:opacity-50 cursor-pointer">
               {t[a]}
@@ -109,6 +121,7 @@ export default function RequestDetail({ projectId, requestId, onBack }: { projec
           {t.uploadPlan}
           <input type="file" className="hidden" onChange={upload} disabled={busy} />
         </label>
+        {designMsg && <p className="mt-2 text-xs font-bold text-material">{designMsg}</p>}
       </div>
 
       <div className="mt-4 rounded-lg border border-hairline bg-white p-4">
