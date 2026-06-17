@@ -73,7 +73,7 @@ open ──accept──▶ accepted ──start──▶ in_progress ──done�
 ```ts
 interface DesignInput { planAttachmentId?: string; requirements?: string; }
 interface DesignResult { kind: DesignKind; provider: DesignProviderKind; data: unknown; }
-interface DesignProvider { name: DesignProviderKind; generate(input, ctx): Promise<DesignResult>; }
+interface DesignProvider { name: DesignProviderKind; generate(input): Promise<DesignResult[]>; }
 ```
 - **MVP impl — `OpenAiVisionProvider`:** plan image → structured schema JSON (rooms, openings,
   approximate dimensions) + a rendered **SVG** floor plan. Runs in the existing OpenAI/LangSmith stack.
