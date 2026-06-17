@@ -83,6 +83,20 @@ enum AttachmentStorage {
   file
 }
 
+enum DesignKind {
+  schema
+  svg
+  render
+  external3d
+}
+
+enum DesignProviderKind {
+  openai
+  planner5d
+  coohom
+  manual
+}
+
 // ---- Models ----
 
 model User {
@@ -392,11 +406,12 @@ model Project {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
-  account     Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account     Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   members     ProjectMember[]
   sites       Site[]
   requests    Request[]
   attachments Attachment[]
+  designs     DesignArtifact[]
 
   @@index([accountId, status])
   @@map("projects")
@@ -434,6 +449,7 @@ model Request {
   project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   messages    RequestMessage[]
   attachments Attachment[]
+  designs     DesignArtifact[]
 
   @@index([accountId, projectId, status])
   @@map("requests")
@@ -470,6 +486,24 @@ model Attachment {
 
   @@index([accountId, projectId])
   @@map("attachments")
+}
+
+model DesignArtifact {
+  id          String             @id @default(uuid())
+  accountId   String             @map("account_id")
+  projectId   String             @map("project_id")
+  requestId   String?            @map("request_id")
+  kind        DesignKind
+  provider    DesignProviderKind
+  data        Json
+  createdById String             @map("created_by_id")
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  request Request? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, projectId])
+  @@map("design_artifacts")
 }
 
 // ── Telegram ──
