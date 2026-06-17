@@ -20,6 +20,9 @@ export class OpenAiVisionProvider implements DesignProvider {
   private readonly openai: OpenAI;
 
   constructor(config: ConfigService) {
+    // NOTE: the client's plan image is sent to OpenAI and, when LANGSMITH_TRACING is set,
+    // captured by LangSmith. Treat plan images as client PII; never enable tracing in a
+    // production tenant serving real client data without consent.
     this.openai = wrapOpenAI(new OpenAI({ apiKey: config.get<string>('OPENAI_API_KEY') }));
   }
 
@@ -33,10 +36,13 @@ export class OpenAiVisionProvider implements DesignProvider {
       },
     ];
     if (input.planImageBase64) {
+      const safeMime = /^image\/(png|jpe?g|gif|webp)$/.test(input.mimeType || '')
+        ? (input.mimeType as string)
+        : 'image/png';
       userParts.push({
         type: 'image_url',
         image_url: {
-          url: `data:${input.mimeType || 'image/png'};base64,${input.planImageBase64}`,
+          url: `data:${safeMime};base64,${input.planImageBase64}`,
           detail: 'high',
         },
       });

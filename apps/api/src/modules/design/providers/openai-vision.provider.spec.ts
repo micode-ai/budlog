@@ -43,4 +43,13 @@ describe('OpenAiVisionProvider', () => {
     expect(hasImage).toBe(true);
     expect(hasReq).toBe(true);
   });
+
+  it('coerces a non-image mimeType to image/png in the data URI', async () => {
+    const { provider, create } = makeProvider('{"rooms":[]}');
+    await provider.generate({ planImageBase64: 'IMG', mimeType: 'text/html' });
+    const arg = create.mock.calls[0][0];
+    const parts = arg.messages[arg.messages.length - 1].content;
+    const img = parts.find((p: any) => p.type === 'image_url');
+    expect(img.image_url.url.startsWith('data:image/png;base64,IMG')).toBe(true);
+  });
 });

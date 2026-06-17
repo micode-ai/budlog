@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DesignService } from './design.service';
 
 function makeService() {
@@ -7,6 +7,8 @@ function makeService() {
       create: jest.fn((a: any) => Promise.resolve({ id: 'd1', ...a.data })),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    request: { findFirst: jest.fn().mockResolvedValue({ id: 'r1' }) },
+    attachment: { findFirst: jest.fn().mockResolvedValue({ id: 'a1' }) },
   };
   const requests: any = {
     getAttachmentFile: jest.fn().mockResolvedValue({ buffer: Buffer.from('img'), mimeType: 'image/png' }),
@@ -58,5 +60,23 @@ describe('DesignService.run', () => {
     expect(prisma.designArtifact.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { accountId: 'acc-1', projectId: 'p1' } }),
     );
+  });
+
+  it('404s when the request is not in this account+project', async () => {
+    const { service, prisma, provider } = makeService();
+    prisma.request.findFirst.mockResolvedValue(null);
+    await expect(
+      service.run('acc-1', 'p1', 'rX', 'u1', 'designer', { planAttachmentId: 'a1' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(provider.generate).not.toHaveBeenCalled();
+  });
+
+  it('404s when the plan attachment is not on this request', async () => {
+    const { service, prisma, provider } = makeService();
+    prisma.attachment.findFirst.mockResolvedValue(null);
+    await expect(
+      service.run('acc-1', 'p1', 'r1', 'u1', 'designer', { planAttachmentId: 'aX' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(provider.generate).not.toHaveBeenCalled();
   });
 });

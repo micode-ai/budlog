@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { RequestsService } from '../requests/requests.service';
 import { DESIGN_PROVIDER, DesignProvider, DesignInput } from './providers/design-provider.interface';
@@ -29,8 +29,19 @@ export class DesignService {
       throw new BadRequestException('Provide a planAttachmentId or requirements');
     }
 
+    const request = await this.prisma.request.findFirst({
+      where: { id: requestId, accountId, projectId },
+      select: { id: true },
+    });
+    if (!request) throw new NotFoundException('Request not found');
+
     const input: DesignInput = { requirements: dto.requirements };
     if (dto.planAttachmentId) {
+      const attachment = await this.prisma.attachment.findFirst({
+        where: { id: dto.planAttachmentId, accountId, projectId, requestId },
+        select: { id: true },
+      });
+      if (!attachment) throw new NotFoundException('Plan attachment not found on this request');
       const { buffer, mimeType } = await this.requests.getAttachmentFile(
         accountId,
         projectId,
